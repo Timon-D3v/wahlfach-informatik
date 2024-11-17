@@ -15,7 +15,7 @@ const gamearray = [
 ];
 ```
 ===
-!["Idee"]("https://ik.imagekit.io/timon/cdn/md/tetris/Idea.png?updatedAt=1731623342875")
+!["Idee"]("https://ik.imagekit.io/timon/cdn/md/tetris/Idea.png")
 
 ## Warum Three.js?
 
