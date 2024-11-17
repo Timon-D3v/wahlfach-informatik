@@ -75,6 +75,7 @@ class Tetris {
     end() {
         this.gameLoopInterval = clearInterval(this.gameLoopInterval);
         this.setScore();
+        console.log("Game ended");
     }
 
     render() {
@@ -91,11 +92,28 @@ class Tetris {
         for (let y = 0; y < this.gameArray.length; y++) {
             for (let x = 0; x < this.gameArray[y].length; x++) {
                 if (this.gameArray[y][x] === 0) continue;
+
                 if (y === 0) {
                     this.gameArray[y][x].canMoveDown = false;
                     continue;
+                } else {
+                    this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
                 }
-                this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
+
+                // can move left
+                if (x === 0) {
+                    this.gameArray[y][x].canMoveLeft = false;
+                } else {
+                    this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
+                }
+
+
+                // can move right
+                if (x === this.width - 1) {
+                    this.gameArray[y][x].canMoveRight = false;
+                } else {
+                    this.gameArray[y][x].canMoveRight = this.gameArray[y][x + 1] === 0;
+                }
             }
         }
 
@@ -108,8 +126,6 @@ class Tetris {
                     moveBlock = false;
                 }
             });
-
-            console.log(moveBlock);
 
             if (moveBlock) {
                 this.gameObjects[i].moveDown();
@@ -160,9 +176,9 @@ class Tetris {
         this.updateHighscores(response);
     }
 
-    generateCube() {
+    generateCube(color = this.colors[Math.floor(Math.random() * this.colors.length)]) {
         const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshBasicMaterial({ color: this.colors[Math.floor(Math.random() * this.colors.length)] });
+        const material = new THREE.MeshBasicMaterial({ color });
         const cube = new THREE.Mesh(geometry, material);
         cube.position.set(100, 100, 100);
         this.scene.add(cube);
@@ -177,7 +193,7 @@ class Tetris {
 
         this.update();
 
-        if (this.time % 10 === 0) {
+        if (this.time % 12 === 0) { // alle 12 frames ein neues GameObject
             this.generateGameObject();
         }
 
@@ -223,6 +239,7 @@ class Tetris {
             constructor() {
                 this.id = randomString(32);
                 this.type = "LINE";
+                this.color = global().colors[Math.floor(Math.random() * global().colors.length)]
                 this.objects = [
                     {
                         number: 0,
@@ -234,8 +251,10 @@ class Tetris {
                             x: Math.floor(global().width / 2),
                             y: global().height - 3
                         },
-                        cube: global().generateCube(),
-                        isAppending: false
+                        cube: global().generateCube(this.color),
+                        isAppending: false,
+                        hasBlockRight: false,
+                        hasBlockLeft: false,
                     }, {
                         number: 1,
                         position: {
@@ -246,8 +265,10 @@ class Tetris {
                             x: Math.floor(global().width / 2),
                             y: global().height - 2
                         },
-                        cube: global().generateCube(),
-                        isAppending: true
+                        cube: global().generateCube(this.color),
+                        isAppending: true,
+                        hasBlockRight: false,
+                        hasBlockLeft: false,
                     }, {
                         number: 2,
                         position: {
@@ -258,8 +279,10 @@ class Tetris {
                             x: Math.floor(global().width / 2),
                             y: global().height - 1
                         },
-                        cube: global().generateCube(),
-                        isAppending: true
+                        cube: global().generateCube(this.color),
+                        isAppending: true,
+                        hasBlockRight: false,
+                        hasBlockLeft: false,
                     }, {
                         number: 3,
                         position: {
@@ -270,8 +293,10 @@ class Tetris {
                             x: Math.floor(global().width / 2),
                             y: global().height
                         },
-                        cube: global().generateCube(),
-                        isAppending: true
+                        cube: global().generateCube(this.color),
+                        isAppending: true,
+                        hasBlockRight: false,
+                        hasBlockLeft: false,
                     }
                 ]
         
@@ -344,13 +369,137 @@ class Tetris {
     }
 
     moveLeft() {
-        this.gameObjects[this.gameObjects.length - 1].moveLeft();
-        // move the current object left
+        // Check if a object can move left
+        const object = this.gameObjects[this.gameObjects.length - 1];
+        let moveLeft = true;
+
+        object.objects.forEach(obj => {
+            if (!obj.canMoveLeft && !obj.hasBlockLeft) {
+                moveLeft = false;
+            }
+        });
+
+        if (!moveLeft) return;
+
+        const posArray = [];
+        object.objects.forEach(obj => {
+            posArray.push(obj.gamePosition);
+        });
+
+        for (let y = 0; y < this.gameArray.length; y++) {
+            for (let x = 0; x < this.gameArray[y].length; x++) {
+                if (this.gameArray[y][x] === 0) continue;
+
+                const cube = this.gameArray[y][x];
+
+                posArray.forEach(pos => {
+                    if (cube.gamePosition.x === pos.x && cube.gamePosition.y === pos.y) {
+                        this.gameArray[y][x] = 0;
+                    }
+                });
+            }
+        }
+
+        object.moveLeft();
+
+        object.objects.forEach(obj => {
+            this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
+        });
+
+        for (let y = 0; y < this.gameArray.length; y++) {
+            for (let x = 0; x < this.gameArray[y].length; x++) {
+                if (this.gameArray[y][x] === 0) continue;
+
+                if (y === 0) {
+                    this.gameArray[y][x].canMoveDown = false;
+                    continue;
+                } else {
+                    this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
+                }
+
+                // can move left
+                if (x === 0) {
+                    this.gameArray[y][x].canMoveLeft = false;
+                } else {
+                    this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
+                }
+
+
+                // can move right
+                if (x === this.width - 1) {
+                    this.gameArray[y][x].canMoveRight = false;
+                } else {
+                    this.gameArray[y][x].canMoveRight = this.gameArray[y][x + 1] === 0;
+                }
+            }
+        }
     }
 
     moveRight() {
-        // move the current object right
-        this.gameObjects[this.gameObjects.length - 1].moveRight();
+        // Check if a object can move left
+        const object = this.gameObjects[this.gameObjects.length - 1];
+        let moveRight = true;
+
+        object.objects.forEach(obj => {
+            if (!obj.canMoveRight && !obj.hasBlockRight) {
+                moveRight = false;
+            }
+        });
+
+        if (!moveRight) return;
+
+        const posArray = [];
+        object.objects.forEach(obj => {
+            posArray.push(obj.gamePosition);
+        });
+
+        for (let y = 0; y < this.gameArray.length; y++) {
+            for (let x = 0; x < this.gameArray[y].length; x++) {
+                if (this.gameArray[y][x] === 0) continue;
+
+                const cube = this.gameArray[y][x];
+
+                posArray.forEach(pos => {
+                    if (cube.gamePosition.x === pos.x && cube.gamePosition.y === pos.y) {
+                        this.gameArray[y][x] = 0;
+                    }
+                });
+            }
+        }
+
+        object.moveRight();
+
+        object.objects.forEach(obj => {
+            this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
+        });
+
+        for (let y = 0; y < this.gameArray.length; y++) {
+            for (let x = 0; x < this.gameArray[y].length; x++) {
+                if (this.gameArray[y][x] === 0) continue;
+
+                if (y === 0) {
+                    this.gameArray[y][x].canMoveDown = false;
+                    continue;
+                } else {
+                    this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
+                }
+
+                // can move left
+                if (x === 0) {
+                    this.gameArray[y][x].canMoveLeft = false;
+                } else {
+                    this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
+                }
+
+
+                // can move right
+                if (x === this.width - 1) {
+                    this.gameArray[y][x].canMoveRight = false;
+                } else {
+                    this.gameArray[y][x].canMoveRight = this.gameArray[y][x + 1] === 0;
+                }
+            }
+        }
     }
 
     rotateRight() {
