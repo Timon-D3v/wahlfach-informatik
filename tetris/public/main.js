@@ -1,9 +1,9 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { getElm, GETJson, timonjs_message, createElm, post, randomString, on } from "timonjs";
+import timon, { getElm, GETJson, createElm, post, on, errorLog, log } from "timonjs";
+import { Line } from "./objects.js";
 
-timonjs_message();
-
+timon.timonjs_message();
 
 
 
@@ -27,16 +27,6 @@ class Tetris {
             onStart: new Event("TETRIS_STARTED"),
             runStart: new Event("TETRIS_RUN_START"),
         }
-
-        on(document, "TETRIS_RUN_START", () => this.start());
-    }
-
-    getPositionX(x) {
-        return x - this.offset.x;
-    }
-
-    getPositionY(y) {
-        return y - this.offset.y;
     }
 
     async init() {
@@ -44,24 +34,23 @@ class Tetris {
         this.scene = new THREE.Scene();
         this.camera = new THREE.OrthographicCamera(-this.width / 2, this.width / 2, (this.height - this.extraRows) / 2, -(this.height - this.extraRows) / 2, 1, 1000);
         this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas });
-        this.renderer.setSize(this.canvas.x(), this.canvas.y());
         this.running = false;
-        this.highscores = await GETJson("/highscores");
+        this.enableControls = false;
+        this.controls = this.enableControls ? new OrbitControls(this.camera, this.renderer.domElement) : null;
         this.score = 0;
+        this.controls = null;
+        this.highscores = await GETJson("/highscores");
 
-        this.updateHighscores(this.highscores);
+
+
+        this.renderer.setSize(this.canvas.x(), this.canvas.y());
 
         this.camera.position.set(0.5, 0.5, 5);
         this.camera.lookAt(0.5, 0.5, 0);
 
-        this.enableControls = false;
-        this.controls = null;
-        if (this.enableControls) {
-            this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-        }
-        
-
         this.render();
+
+        this.updateHighscores(this.highscores);
 
         this.moveLeftCaller = on(document, "keydown", e => {
             if (e.key === "ArrowLeft" || e.key === "a") this.moveLeft();
@@ -69,17 +58,28 @@ class Tetris {
         this.moveRightCaller = on(document, "keydown", e => {
             if (e.key === "ArrowRight" || e.key === "d") this.moveRight();
         });
+
+        on(document, "TETRIS_RUN_START", () => this.start());
+    }
+
+    destroy() {
+        this.end();
+        this.clearScene();
+
+        document.removeEventListener("TETRIS_RUN_START", this.start);
+        document.removeEventListener("keydown", this.moveLeftCaller);
+        document.removeEventListener("keydown", this.moveRightCaller);
     }
 
     start() {
         this.clearScene();
-        this.gameArray = new Array(this.height).fill(0).map(() => new Array(this.width).fill(0));
-        this.gameLoopInterval = setInterval(this.gameLoop.bind(this), 1000 / this.initialSpeed);
-        this.time = 0;
-        this.running = true;
-        this.score = 0;
         this.speed = this.initialSpeed;
+        this.time = 0;
+        this.score = 0;
         this.gameObjects = [];
+        this.running = true;
+        this.gameArray = new Array(this.height).fill(0).map(() => new Array(this.width).fill(0));
+        this.gameLoopInterval = setInterval(this.gameLoop.bind(this), 1000 / this.speed);
         this.generateGameObject();
         // this.rotateRightCaller = on(document, "keydown", e => {
         //     if (e.key === "ArrowUp" || e.key === "W") this.rotateRight()
@@ -91,7 +91,7 @@ class Tetris {
     end() {
         this.gameLoopInterval = clearInterval(this.gameLoopInterval);
         this.setScore();
-        console.log("Game ended");
+        log("Game ended");
     }
 
     render() {
@@ -99,39 +99,30 @@ class Tetris {
 
         this.renderer.render(this.scene, this.camera);
 
-        if (this.enableControls) {
-            this.controls.update();
+        if (this.enableControls) this.controls.update();
+    }
+
+    gameLoop() {
+        console.log(this.time, this.gameArray);
+        
+        this.running = this.checkForDeath();
+        if (!this.running) return this.end();
+
+        this.update();
+
+        this.checkForFullRows();
+
+        this.time++;
+
+        if (this.gameObjects.length % 5 === 0) {
+            this.speed += 0.1;
+            clearInterval(this.gameLoopInterval);
+            this.gameLoopInterval = setInterval(this.gameLoop.bind(this), 1000 / this.speed);
         }
     }
 
     update() {
-        for (let y = 0; y < this.gameArray.length; y++) {
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) continue;
-
-                if (y === 0) {
-                    this.gameArray[y][x].canMoveDown = false;
-                    continue;
-                } else {
-                    this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
-                }
-
-                // can move left
-                if (x === 0) {
-                    this.gameArray[y][x].canMoveLeft = false;
-                } else {
-                    this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
-                }
-
-
-                // can move right
-                if (x === this.width - 1) {
-                    this.gameArray[y][x].canMoveRight = false;
-                } else {
-                    this.gameArray[y][x].canMoveRight = this.gameArray[y][x + 1] === 0;
-                }
-            }
-        }
+        this.updateLegalMoves();
 
         // Check if a object can move down
         for (let i = 0; i < this.gameObjects.length; i++) {
@@ -163,14 +154,16 @@ class Tetris {
                         this.gameArray[y][x] = 0;
                     } else {
                         this.running = false;
-                        console.error("Something went wrong. Game ended.");
+                        errorLog("Something went wrong. Game ended.");
                     }
                 }
-
-                // this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
             }
         }
 
+        this.updateLegalMoves();
+    }
+
+    updateLegalMoves() {
         for (let y = 0; y < this.gameArray.length; y++) {
             for (let x = 0; x < this.gameArray[y].length; x++) {
                 if (this.gameArray[y][x] === 0) continue;
@@ -182,15 +175,12 @@ class Tetris {
                     this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
                 }
 
-                // can move left
                 if (x === 0) {
                     this.gameArray[y][x].canMoveLeft = false;
                 } else {
                     this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
                 }
 
-
-                // can move right
                 if (x === this.width - 1) {
                     this.gameArray[y][x].canMoveRight = false;
                 } else {
@@ -198,19 +188,6 @@ class Tetris {
                 }
             }
         }
-
-        // Check if a row is full
-        // If a row is full, remove it and add a new row at the top
-        // Increase the score
-        // But skip the falling for one frame
-
-        // Check for each block, if there is space to fall down
-
-        // NEW IDEA:
-        // Just replace the blocks with a 0
-        // trail and head the blocks to make sure, that the object is split up now
-
-        this.checkForFullRows();
     }
 
     checkForFullRows() {
@@ -235,12 +212,65 @@ class Tetris {
         });
     }
 
+    checkForDeath() {
+        if (this.running === false) return false;
+
+        for (let x = 0; x < this.gameArray[this.height - this.extraRows - 1].length; x++) {
+            const cube = this.gameArray[this.height - this.extraRows - 1][x];
+
+            if (cube === 0) continue;
+
+            if (!cube.canMoveDown && !cube.isAppending) return false;
+
+            if (cube.isAppending) {
+                // check if the block is in the last gameObject
+                // if not, the position is invalid => game over
+                const head = this.headGameObject(cube);
+
+                if (!head.canMoveDown) return false;
+            }
+        }
+
+        return true;
+    }
+
+    generateGameObject() {
+        // This tetris game cannot handle objects with cubes that are connected to more than two other cubes
+        // const type = this.gameObjectTypes[Math.floor(Math.random() * this.gameObjectTypes.length)];
+        const type = "LINE";
+
+        switch (type) {
+            case "LINE":
+                return this.initLine();
+            case "L":
+                return this.initL();
+            case "L_REVERSE":
+                return this.initL(true);
+            case "S":
+                return this.initS();
+            case "S_REVERSE":
+                return this.initS(true);
+            case "SQUARE":
+                return this.initSquare();
+            case "T":
+                return this.initT();
+        }
+    }
+
+    generateCube(color = this.colors[Math.floor(Math.random() * this.colors.length)]) {
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshBasicMaterial({ color });
+        const cube = new THREE.Mesh(geometry, material);
+        cube.position.set(100, 100, 100);
+        this.scene.add(cube);
+        return cube;
+    }
+
     handleFullRow(y) {
         const row = this.gameArray[y];
         let skip = false;
 
         row.forEach(cube => {
-            console.log(cube);
             if (this.headGameObject(cube).canMoveDown === true) {
                 skip = true;
             }
@@ -285,73 +315,6 @@ class Tetris {
         this.score += 100 * this.speed;
     }
 
-    updateHighscores(array) {
-        const ol = getElm("highscores");
-        ol.html("");
-
-        array.forEach(score => {
-            const li = createElm("li");
-            li.text(score);
-            ol.append(li);
-        });
-    }
-
-    async setScore() {
-        const response = await post("/setScore", { score: this.score });
-        this.updateHighscores(response);
-    }
-
-    generateCube(color = this.colors[Math.floor(Math.random() * this.colors.length)]) {
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshBasicMaterial({ color });
-        const cube = new THREE.Mesh(geometry, material);
-        cube.position.set(100, 100, 100);
-        this.scene.add(cube);
-        return cube;
-    }
-
-    gameLoop() {
-        console.log(this.time, this.gameArray);
-        
-        this.running = this.checkForDeath();
-        if (!this.running) return this.end();
-
-        this.update();
-
-
-        // if (this.time % 12 === 0) { // alle 12 frames ein neues GameObject
-        //     this.generateGameObject();
-        // }
-
-        this.time++;
-    }
-
-    checkForDeath() {
-        if (this.running === false) return false;
-
-        for (let x = 0; x < this.gameArray[this.height - this.extraRows - 1].length; x++) {
-            const cube = this.gameArray[this.height - this.extraRows - 1][x];
-
-            if (cube === 0) continue;
-
-            if (!cube.canMoveDown && !cube.isAppending) return false;
-
-            if (cube.isAppending) {
-                // check if the block is in the last gameObject
-                // if not, the position is invalid => game over
-                const head = this.headGameObject(cube);
-
-                if (!head.canMoveDown) return false;
-            }
-        }
-
-        // if there is a block at the top of the screen, check if is is able to fall
-        // if it is not, return false => game over
-        // if it is, return true => game continues
-
-        return true;
-    }
-
     trailGameObject(object) {
         if (object.trail === null) return object;
 
@@ -362,223 +325,6 @@ class Tetris {
         if (object.head === null) return object;
 
         return this.headGameObject(this.gameArray[object.gamePosition.y + object.head.y - 1][object.gamePosition.x + object.head.x - 1]);
-    }
-
-    generateGameObject() {
-        // This tetris game cannot handle objects with cubes that are connected to more than two other cubes
-        // const type = this.gameObjectTypes[Math.floor(Math.random() * this.gameObjectTypes.length)];
-        const type = "LINE";
-
-        switch (type) {
-            case "LINE":
-                return this.initLine();
-            case "L":
-                return this.initL();
-            case "L_REVERSE":
-                return this.initL(true);
-            case "S":
-                return this.initS();
-            case "S_REVERSE":
-                return this.initS(true);
-            case "SQUARE":
-                return this.initSquare();
-            case "T":
-                return this.initT();
-        }
-    }
-
-    initLine() {
-        const global = () => this;
-
-        class Line {
-            constructor() {
-                this.id = randomString(32);
-                this.type = "LINE";
-                this.color = global().colors[Math.floor(Math.random() * global().colors.length)]
-                this.objects = [
-                    {
-                        number: 0,
-                        position: {
-                            x: global().getPositionX(Math.floor(global().width / 2)),
-                            y: global().getPositionY(global().height) - 1
-                        },
-                        gamePosition: {
-                            x: Math.floor(global().width / 2),
-                            y: global().height - 3
-                        },
-                        cube: global().generateCube(this.color),
-                        isAppending: false,
-                        hasBlockRight: false,
-                        hasBlockLeft: false,
-                        trail: {
-                            // to find the next element
-                            x: 0, // go 0 to the right
-                            y: 1 // go one up
-                            // in the gameArray
-                        },
-                        head: null
-                    }, {
-                        number: 1,
-                        position: {
-                            x: global().getPositionX(Math.floor(global().width / 2)),
-                            y: global().getPositionY(global().height)
-                        },
-                        gamePosition: {
-                            x: Math.floor(global().width / 2),
-                            y: global().height - 2
-                        },
-                        cube: global().generateCube(this.color),
-                        isAppending: true,
-                        hasBlockRight: false,
-                        hasBlockLeft: false,
-                        trail: {
-                            x: 0,
-                            y: 1
-                        },
-                        head: {
-                            x: 0,
-                            y: -1
-                        }
-                    }, {
-                        number: 2,
-                        position: {
-                            x: global().getPositionX(Math.floor(global().width / 2)),
-                            y: global().getPositionY(global().height) + 1
-                        },
-                        gamePosition: {
-                            x: Math.floor(global().width / 2),
-                            y: global().height - 1
-                        },
-                        cube: global().generateCube(this.color),
-                        isAppending: true,
-                        hasBlockRight: false,
-                        hasBlockLeft: false,
-                        trail: {
-                            x: 0,
-                            y: 1
-                        },
-                        head: {
-                            x: 0,
-                            y: -1
-                        }
-                    }, {
-                        number: 3,
-                        position: {
-                            x: global().getPositionX(Math.floor(global().width / 2)),
-                            y: global().getPositionY(global().height) + 2
-                        },
-                        gamePosition: {
-                            x: Math.floor(global().width / 2),
-                            y: global().height
-                        },
-                        cube: global().generateCube(this.color),
-                        isAppending: true,
-                        hasBlockRight: false,
-                        hasBlockLeft: false,
-                        trail: null,
-                        head: {
-                            x: 0,
-                            y: -1
-                        }
-                    }
-                ]
-        
-                this.objects.forEach(obj => {
-                    obj.id = this.id;
-                    obj.cube.position.set(obj.position.x, obj.position.y, 0);
-                });
-            }
-        
-            moveLeft() {
-                this.objects.forEach(obj => {
-                    obj.position.x--;
-                    obj.gamePosition.x--;
-                    obj.cube.position.x = obj.position.x;
-                });
-            }
-        
-            moveRight() {
-                this.objects.forEach(obj => {
-                    obj.position.x++;
-                    obj.gamePosition.x++;
-                    obj.cube.position.x = obj.position.x;
-                });
-            }
-        
-            moveDown() {
-                this.objects.forEach(obj => {
-                    obj.position.y--;
-                    obj.gamePosition.y--;
-                    obj.cube.position.y = obj.position.y;
-                });
-            }
-        
-            rotateRight() {
-                // rotate the current object
-                // optional
-            }
-        
-            rotateLeft() {
-                // rotate the current object
-                // optional
-            }
-        }
-
-        const line = new Line();
-
-        line.objects.forEach(obj => {
-            if (this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] !== 0) return this.end();
-  
-            this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
-        });
-
-        this.gameObjects.push(line);
-
-        for (let y = 0; y < this.gameArray.length; y++) {
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) continue;
-
-                if (y === 0) {
-                    this.gameArray[y][x].canMoveDown = false;
-                    continue;
-                } else {
-                    this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
-                }
-
-                // can move left
-                if (x === 0) {
-                    this.gameArray[y][x].canMoveLeft = false;
-                } else {
-                    this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
-                }
-
-
-                // can move right
-                if (x === this.width - 1) {
-                    this.gameArray[y][x].canMoveRight = false;
-                } else {
-                    this.gameArray[y][x].canMoveRight = this.gameArray[y][x + 1] === 0;
-                }
-            }
-        }
-
-        return line;
-    }
-
-    initL(reverse = false) {
-        
-    }
-
-    initS(reverse = false) {
-        
-    }
-
-    initSquare() {
-        
-    }
-
-    initT() {
-        
     }
 
     moveLeft() {
@@ -621,33 +367,7 @@ class Tetris {
             this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
         });
 
-        for (let y = 0; y < this.gameArray.length; y++) {
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) continue;
-
-                if (y === 0) {
-                    this.gameArray[y][x].canMoveDown = false;
-                    continue;
-                } else {
-                    this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
-                }
-
-                // can move left
-                if (x === 0) {
-                    this.gameArray[y][x].canMoveLeft = false;
-                } else {
-                    this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
-                }
-
-
-                // can move right
-                if (x === this.width - 1) {
-                    this.gameArray[y][x].canMoveRight = false;
-                } else {
-                    this.gameArray[y][x].canMoveRight = this.gameArray[y][x + 1] === 0;
-                }
-            }
-        }
+        this.updateLegalMoves();
     }
 
     moveRight() {
@@ -690,33 +410,7 @@ class Tetris {
             this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
         });
 
-        for (let y = 0; y < this.gameArray.length; y++) {
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) continue;
-
-                if (y === 0) {
-                    this.gameArray[y][x].canMoveDown = false;
-                    continue;
-                } else {
-                    this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
-                }
-
-                // can move left
-                if (x === 0) {
-                    this.gameArray[y][x].canMoveLeft = false;
-                } else {
-                    this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
-                }
-
-
-                // can move right
-                if (x === this.width - 1) {
-                    this.gameArray[y][x].canMoveRight = false;
-                } else {
-                    this.gameArray[y][x].canMoveRight = this.gameArray[y][x + 1] === 0;
-                }
-            }
-        }
+        this.updateLegalMoves();
     }
 
     rotateRight() {
@@ -727,7 +421,15 @@ class Tetris {
     rotateLeft() {
         // rotate the current object
         // optional
-    } 
+    }
+
+    getPositionX(x) {
+        return x - this.offset.x;
+    }
+
+    getPositionY(y) {
+        return y - this.offset.y;
+    }
 
     clearScene() {
         // Loop through all children in the scene
@@ -749,7 +451,55 @@ class Tetris {
             }
         }
     
-        console.log("Scene cleared!");
+        log("Scene cleared!");
+    }
+
+    updateHighscores(array) {
+        const ol = getElm("highscores");
+        ol.html("");
+
+        array.forEach(score => {
+            const li = createElm("li");
+            li.text(score);
+            ol.append(li);
+        });
+    }
+
+    async setScore() {
+        const response = await post("/setScore", { score: Math.floor(this.score) });
+        this.updateHighscores(response);
+    }
+
+    initLine() {
+        const line = new Line(this);
+
+        line.objects.forEach(obj => {
+            if (this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] !== 0) return this.end();
+  
+            this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
+        });
+
+        this.gameObjects.push(line);
+
+        this.updateLegalMoves();
+
+        return line;
+    }
+
+    initL(reverse = false) {
+        
+    }
+
+    initS(reverse = false) {
+        
+    }
+
+    initSquare() {
+        
+    }
+
+    initT() {
+        
     }
     
     // Add two invisible rows at the top for cubes like -| to spawn and three rows for | cubes to spawn
@@ -772,43 +522,9 @@ class Tetris {
     // ]
 }
 
-const tetris = new Tetris(6, 12, 10);
+const tetris = new Tetris(6, 12, 1.5);
 tetris.init();
 
 getElm("start").on("click", () => {
     document.dispatchEvent(tetris.events.runStart);
 });
-
-
-
-
-// make this its own function
-/*
-for (let y = 0; y < this.gameArray.length; y++) {
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) continue;
-
-                if (y === 0) {
-                    this.gameArray[y][x].canMoveDown = false;
-                    continue;
-                } else {
-                    this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
-                }
-
-                // can move left
-                if (x === 0) {
-                    this.gameArray[y][x].canMoveLeft = false;
-                } else {
-                    this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
-                }
-
-
-                // can move right
-                if (x === this.width - 1) {
-                    this.gameArray[y][x].canMoveRight = false;
-                } else {
-                    this.gameArray[y][x].canMoveRight = this.gameArray[y][x + 1] === 0;
-                }
-            }
-        }
-            */
