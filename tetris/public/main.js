@@ -5,6 +5,11 @@ import { getElm, GETJson, timonjs_message, createElm, post, randomString, on } f
 timonjs_message();
 
 
+
+
+// This tetris game cannot handle objects with cubes that are connected to more than two other cubes
+
+
 class Tetris {
     constructor(width, height, initialSpeed) {
         this.extraRows = 3;
@@ -44,7 +49,7 @@ class Tetris {
         this.highscores = await GETJson("/highscores");
         this.score = 0;
 
-        this.updateHighscores();
+        this.updateHighscores(this.highscores);
 
         this.camera.position.set(0.5, 0.5, 5);
         this.camera.lookAt(0.5, 0.5, 0);
@@ -73,6 +78,7 @@ class Tetris {
         this.time = 0;
         this.running = true;
         this.score = 0;
+        this.speed = this.initialSpeed;
         this.gameObjects = [];
         this.generateGameObject();
         // this.rotateRightCaller = on(document, "keydown", e => {
@@ -199,13 +205,91 @@ class Tetris {
         // But skip the falling for one frame
 
         // Check for each block, if there is space to fall down
+
+        // NEW IDEA:
+        // Just replace the blocks with a 0
+        // trail and head the blocks to make sure, that the object is split up now
+
+        this.checkForFullRows();
     }
 
-    updateHighscores() {
+    checkForFullRows() {
+        const fullRows = [];
+
+        for (let y = 0; y < this.gameArray.length; y++) {
+            let fullRow = true;
+
+            for (let x = 0; x < this.gameArray[y].length; x++) {
+                if (this.gameArray[y][x] === 0) {
+                    fullRow = false;
+                }
+            }
+
+            if (fullRow) {
+                fullRows.push(y);
+            }
+        }
+
+        fullRows.forEach(y => {
+            this.handleFullRow(y);
+        });
+    }
+
+    handleFullRow(y) {
+        const row = this.gameArray[y];
+        let skip = false;
+
+        row.forEach(cube => {
+            console.log(cube);
+            if (this.headGameObject(cube).canMoveDown === true) {
+                skip = true;
+            }
+        });
+
+        // One ore more blocks are falling down
+        if (skip) return;
+
+        for (let x = 0; x < row.length; x++) {
+            const cube = row[x];
+            const head = cube.head === null ? null : this.gameArray[cube.gamePosition.y + cube.head.y - 1][cube.gamePosition.x + cube.head.x - 1];
+            const trail = cube.trail === null ? null : this.gameArray[cube.gamePosition.y + cube.trail.y - 1][cube.gamePosition.x + cube.trail.x - 1];
+
+            if (head !== null) {
+                // handle the head
+                // make it the new trail
+                if (head.trail.x === 1) head.hasBlockRight = false;
+                if (head.trail.x === -1) head.hasBlockLeft = false;
+            }
+
+            if (trail !== null) {
+                // handle the trail
+                // make it the new head
+                if (trail.head.x === 1) trail.hasBlockRight = false;
+                if (trail.head.x === -1) trail = false;
+
+                trail.isAppending = false;
+            }
+
+            if (cube.head !== null) head.trail = null;
+            if (cube.trail !== null) trail.head = null;
+
+
+            this.scene.remove(cube.cube);
+            cube.cube.geometry.dispose();
+            cube.cube.material.dispose();
+
+            row[x] = 0;
+            this.gameArray[y][x] = 0;
+        }
+
+        this.score += 100 * this.speed;
+    }
+
+    updateHighscores(array) {
         const ol = getElm("highscores");
         ol.html("");
 
-        this.highscores.forEach(score => {
+        array.forEach(score => {
             const li = createElm("li");
             li.text(score);
             ol.append(li);
@@ -250,14 +334,7 @@ class Tetris {
 
             if (cube === 0) continue;
 
-            console.log("cube", cube);
-            console.log("cube.canMoveDown", !cube.canMoveDown && !cube.isAppending)
-
             if (!cube.canMoveDown && !cube.isAppending) return false;
-
-            console.log("cube.isAppending", cube.isAppending)
-
-            console.log("long:", this.gameObjects[this.gameObjects.length - 1].objects.includes(cube))
 
             if (cube.isAppending) {
                 // check if the block is in the last gameObject
@@ -288,6 +365,7 @@ class Tetris {
     }
 
     generateGameObject() {
+        // This tetris game cannot handle objects with cubes that are connected to more than two other cubes
         // const type = this.gameObjectTypes[Math.floor(Math.random() * this.gameObjectTypes.length)];
         const type = "LINE";
 
@@ -694,7 +772,7 @@ class Tetris {
     // ]
 }
 
-const tetris = new Tetris(6, 12, 1);
+const tetris = new Tetris(6, 12, 10);
 tetris.init();
 
 getElm("start").on("click", () => {
