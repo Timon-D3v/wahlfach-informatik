@@ -14,7 +14,7 @@ app.get("/", (_req: Request, res: Response) => {
 });
 
 app.get("/highscores", async (_req: Request, res: Response) => {
-    res.json(await getHighscores());
+    res.json({ scores: await getHighscores() });
 });
 
 app.post("/setScore", async (req: Request, res: Response) => {
@@ -25,7 +25,7 @@ app.post("/setScore", async (req: Request, res: Response) => {
     highscores.pop();
 
     setHighscore(highscores);
-    res.json(highscores);
+    res.json({ scores: highscores });
 });
 
 app.listen(port, () => {
