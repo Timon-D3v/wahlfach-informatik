@@ -348,6 +348,8 @@ class Tetris {
         let moveLeft = true;
 
         object.objects.forEach(obj => {
+            console.log(obj)
+            console.log("Real: ", !obj.canMoveLeft && !obj.hasBlockLeft);
             if (!obj.canMoveLeft && !obj.hasBlockLeft) {
                 moveLeft = false;
             }

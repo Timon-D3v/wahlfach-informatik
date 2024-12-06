@@ -287,8 +287,8 @@ export class L {
                 },
                 cube: _this.generateCube(this.color),
                 isAppending: false,
-                hasBlockRight: this.isReversedL,
-                hasBlockLeft: !this.isReversedL,
+                hasBlockRight: !this.isReversedL,
+                hasBlockLeft: this.isReversedL,
                 trail: {
                     // to find the next element
                     x: this.isReversedL ? -1 : 1, // go x right
@@ -308,8 +308,8 @@ export class L {
                 },
                 cube: _this.generateCube(this.color),
                 isAppending: false,
-                hasBlockRight: !this.isReversedL,
-                hasBlockLeft: this.isReversedL,
+                hasBlockRight: this.isReversedL,
+                hasBlockLeft: !this.isReversedL,
                 trail: {
                     x: 0,
                     y: 1
@@ -334,11 +334,11 @@ export class L {
                 hasBlockLeft: false,
                 trail: {
                     x: 0,
-                    y: -1
+                    y: 1
                 },
                 head: {
                     x: 0,
-                    y: 1
+                    y: -1
                 }
             }, {
                 number: 3,
@@ -357,7 +357,7 @@ export class L {
                 trail: null,
                 head: {
                     x: 0,
-                    y: 1
+                    y: -1
                 }
             }
         ]
