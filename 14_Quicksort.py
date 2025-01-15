@@ -23,10 +23,8 @@ def partition(list, left, right):
         if i <= j:
             list[i], list[j] = list[j], list[i]
 
-    if list[i] > pivot:
+    if i != right:
         list[i], list[right] = list[right], list[i]
-    else:
-        i = right
 
     return i
 
