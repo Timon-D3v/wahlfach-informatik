@@ -4,6 +4,7 @@ import timon, { getElm, GETJson, createElm, post, on, errorLog, log } from "timo
 import { Line, Square, L } from "./objects.js";
 
 timon.timonjs_message();
+console.log("For working game please go to: https://dionyziz.com/graphics/canvas-tetris/");
 
 
 
