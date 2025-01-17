@@ -103,6 +103,7 @@ class Tetris {
         this.gameLoopInterval = clearInterval(this.gameLoopInterval);
         this.setScore();
         log("Game ended");
+        alert("Game ended");
     }
 
     render() {
@@ -241,8 +242,8 @@ class Tetris {
 
     generateGameObject() {
         // This tetris game cannot handle objects with cubes that are connected to more than two other cubes
-        const type = this.gameObjectTypes[Math.floor(Math.random() * this.gameObjectTypes.length)];
-        // const type = "SQUARE";
+        // const type = this.gameObjectTypes[Math.floor(Math.random() * this.gameObjectTypes.length)];
+        const type = "SQUARE";
 
         if (this.gameObjects.length % 5 === 0) {
             this.speed += 0.1 * (1 + this.speed / 10);
@@ -523,6 +524,8 @@ class Tetris {
 
     initSquare() {
         const square = new Square(this);
+
+        console.log(square);
 
         square.objects.forEach(obj => {
             if (this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] !== 0) return this.end();
