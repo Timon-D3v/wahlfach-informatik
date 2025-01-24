@@ -70,11 +70,9 @@ ausgang = "exit"
 def is_valid_path(path, map):
     if (len(path) == 0):
         return True
-    elif (map.get(path[0]) == None):
+    elif (path[0] not in map.keys()):
         return False
     elif (map.get(path[0]) == ausgang):
-        return True
-    elif (map.get(path[0]) == sackgasse):
         return True
     else:
         return is_valid_path(path[1:], map[path[0]])
