@@ -1,573 +1,521 @@
-import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import timon, { getElm, GETJson, createElm, post, on, errorLog, log } from "timonjs";
-import { Line, Square, L } from "./objects.js";
-
-timon.timonjs_message();
-console.log("For working game please go to: https://dionyziz.com/graphics/canvas-tetris/");
-
-
-
-// This tetris game cannot handle objects with cubes that are connected to more than two other cubes
-
-
 class Tetris {
-    constructor(width, height, initialSpeed) {
-        this.extraRows = 3;
-        this.width = width;
-        this.height = height + this.extraRows;
-        this.initialSpeed = initialSpeed;
-        this.offset = {
-            x: Math.floor(this.width / 2),
-            y: Math.floor(this.height / 2 + 1)
-        };
-        this.colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff, 0xffa500, 0x800080, 0x00ff7f, 0xff69b4, 0x1e90ff, 0x32cd32];
-        // this.gameObjectTypes = ["LINE", "L", "L_REVERSE", "S", "S_REVERSE", "SQUARE", "T"];
-        this.gameObjectTypes = ["SQUARE", "LINE", "L", "L_REVERSE"]
-        this.events = {
-            onEnd: new Event("TETRIS_ENDED"),
-            onStart: new Event("TETRIS_STARTED"),
-            runStart: new Event("TETRIS_RUN_START"),
+  constructor(width, height, initialSpeed) {
+    this.width = width;
+    this.height = height;
+    this.initialSpeed = initialSpeed;
+    this.gameArray = new Array(this.height)
+      .fill(0)
+      .map(() => new Array(this.width).fill(0));
+    this.initialized = false;
+    this.gameOver = false;
+    this.currentPieceType = null; // Track the type of the current piece
+    this.currentPiece = null;
+    this.currentColor = null;
+    this.currentPosition = { x: 0, y: 0 };
+    this.rotationIndex = 0; // Track the current rotation
+    this.score = 0;
+    this.level = 1; // Track the current level
+    this.linesCleared = 0; // Track the total number of lines cleared
+    this.speedIncrease = 0.1; // Speed increase per level
+    this.linesPerLevel = 1; // Number of lines needed to level up
+    this.shapes = {
+      LINE: {
+        shape: [[1, 1, 1, 1]],
+        rotations: [
+          [[1, 1, 1, 1]], // Original shape
+          [[1], [1], [1], [1]], // Rotated 90 degrees
+        ],
+        color: "#00e9e1",
+      },
+      L: {
+        shape: [
+          [1, 0],
+          [1, 0],
+          [1, 1],
+        ],
+        rotations: [
+          [
+            [1, 0],
+            [1, 0],
+            [1, 1],
+          ], // Original shape
+          [
+            [1, 1, 1],
+            [1, 0, 0],
+          ], // Rotated 90 degrees
+          [
+            [1, 1],
+            [0, 1],
+            [0, 1],
+          ], // Rotated 180 degrees
+          [
+            [0, 0, 1],
+            [1, 1, 1],
+          ], // Rotated 270 degrees
+        ],
+        color: "#e99f00",
+      },
+      L_REVERSE: {
+        shape: [
+          [0, 1],
+          [0, 1],
+          [1, 1],
+        ],
+        rotations: [
+          [
+            [0, 1],
+            [0, 1],
+            [1, 1],
+          ], // Original shape
+          [
+            [1, 0, 0],
+            [1, 1, 1],
+          ], // Rotated 90 degrees
+          [
+            [1, 1],
+            [1, 0],
+            [1, 0],
+          ], // Rotated 180 degrees
+          [
+            [1, 1, 1],
+            [0, 0, 1],
+          ], // Rotated 270 degrees
+        ],
+        color: "#0001e5",
+      },
+      S: {
+        shape: [
+          [0, 1, 1],
+          [1, 1, 0],
+        ],
+        rotations: [
+          [
+            [0, 1, 1],
+            [1, 1, 0],
+          ], // Original shape
+          [
+            [1, 0],
+            [1, 1],
+            [0, 1],
+          ], // Rotated 90 degrees
+        ],
+        color: "#00ed00",
+      },
+      S_REVERSE: {
+        shape: [
+          [1, 1, 0],
+          [0, 1, 1],
+        ],
+        rotations: [
+          [
+            [1, 1, 0],
+            [0, 1, 1],
+          ], // Original shape
+          [
+            [0, 1],
+            [1, 1],
+            [1, 0],
+          ], // Rotated 90 degrees
+        ],
+        color: "#ed0003",
+      },
+      SQUARE: {
+        shape: [
+          [1, 1],
+          [1, 1],
+        ],
+        rotations: [
+          [
+            [1, 1],
+            [1, 1],
+          ], // Square doesn't change when rotated
+        ],
+        color: "#eae740",
+      },
+      T: {
+        shape: [
+          [1, 1, 1],
+          [0, 1, 0],
+        ],
+        rotations: [
+          [
+            [1, 1, 1],
+            [0, 1, 0],
+          ], // Original shape
+          [
+            [0, 1],
+            [1, 1],
+            [0, 1],
+          ], // Rotated 90 degrees
+          [
+            [0, 1, 0],
+            [1, 1, 1],
+          ], // Rotated 180 degrees
+          [
+            [1, 0],
+            [1, 1],
+            [1, 0],
+          ], // Rotated 270 degrees
+        ],
+        color: "#9e00ef",
+      },
+    };
+  }
+
+  async init() {
+    if (this.initialized) return;
+    this.canvas = document.getElementById("scene");
+    this.ctx = this.canvas.getContext("2d");
+
+    this.highscores = await fetch("/highscores");
+    this.highscores = await this.highscores.json();
+    this.updateHighscores(this.highscores.scores);
+
+    // Set canvas size based on game board dimensions
+    this.canvas.width = this.width * 30;
+    this.canvas.height = this.height * 30;
+
+    this.spawnPiece();
+    this.render(); // Start the rendering loop
+    this.gameLoop(); // Start the game logic loop
+    this.initialized = true;
+  }
+
+  getSpeed() {
+    return this.initialSpeed + (this.level - 1) * this.speedIncrease; // Increase speed by 0.1 per level
+  }
+
+  spawnPiece() {
+    const keys = Object.keys(this.shapes);
+    const randomKey = keys[Math.floor(Math.random() * keys.length)];
+    this.currentPiece = this.shapes[randomKey].shape;
+    this.currentColor = this.shapes[randomKey].color;
+    this.currentPieceType = randomKey; // Set the piece type
+    this.currentPosition = { x: Math.floor(this.width / 2) - 1, y: 0 };
+    this.rotationIndex = 0; // Reset rotation index
+
+    // Check if the new piece can be placed
+    if (
+      !this.canMove(
+        this.currentPiece,
+        this.currentPosition.x,
+        this.currentPosition.y,
+      )
+    ) {
+      this.gameOver = true; // Trigger game over
+      console.log("Game Over!"); // Debug log
+      this.endGame(); // Call the game over logic
+      return;
+    }
+  }
+
+  draw() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.drawBoard();
+    this.drawGhostPiece(); // Draw the ghost piece
+    this.drawPiece();
+  }
+
+  drawBoard() {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (this.gameArray[y][x]) {
+          this.ctx.fillStyle = this.gameArray[y][x]; // Use the stored color
+          this.ctx.fillRect(x * 30, y * 30, 30, 30);
         }
+      }
     }
+  }
 
-    async init() {
-        this.canvas = getElm("scene");
-        this.scoreElement = getElm("score");
-        this.scene = new THREE.Scene();
-        this.camera = new THREE.OrthographicCamera(-this.width / 2, this.width / 2, (this.height - this.extraRows) / 2, -(this.height - this.extraRows) / 2, 1, 1000);
-        this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas });
-        this.running = false;
-        this.enableControls = false;
-        this.controls = this.enableControls ? new OrbitControls(this.camera, this.renderer.domElement) : null;
-        this.score = 0;
-        this.gameLoopInterval = null;
-        this.controls = null;
-        this.highscores = await GETJson("/highscores");
-
-
-
-        this.renderer.setSize(this.canvas.x(), this.canvas.y());
-
-        this.camera.position.set(0.5, 0.5, 5);
-        this.camera.lookAt(0.5, 0.5, 0);
-
-        this.render();
-
-        this.updateHighscores(this.highscores.scores);
-
-        this.moveLeftCaller = on(document, "keydown", e => {
-            if (e.key === "ArrowLeft" || e.key === "a") this.moveLeft();
-        });
-        this.moveRightCaller = on(document, "keydown", e => {
-            if (e.key === "ArrowRight" || e.key === "d") this.moveRight();
-        });
-
-        on(document, "TETRIS_RUN_START", () => this.start());
-    }
-
-    destroy() {
-        this.end();
-        this.clearScene();
-
-        document.removeEventListener("TETRIS_RUN_START", this.start);
-        document.removeEventListener("keydown", this.moveLeftCaller);
-        document.removeEventListener("keydown", this.moveRightCaller);
-    }
-
-    start() {
-        this.clearScene();
-        this.speed = this.initialSpeed;
-        this.time = 0;
-        this.score = 0;
-        this.gameObjects = [];
-        this.running = true;
-        this.gameArray = new Array(this.height).fill(0).map(() => new Array(this.width).fill(0));
-
-        if (this.gameLoopInterval === null) {
-            this.gameLoopInterval = setInterval(this.gameLoop.bind(this), 1000 / this.speed);
-        } else {
-            this.gameLoopInterval = clearInterval(this.gameLoopInterval);
-            this.gameLoopInterval = null;
-            this.gameLoopInterval = setInterval(this.gameLoop.bind(this), 1000 / this.speed);
+  drawPiece() {
+    this.ctx.fillStyle = this.currentColor; // Use the piece's color
+    for (let y = 0; y < this.currentPiece.length; y++) {
+      for (let x = 0; x < this.currentPiece[y].length; x++) {
+        if (this.currentPiece[y][x]) {
+          this.ctx.fillRect(
+            (this.currentPosition.x + x) * 30,
+            (this.currentPosition.y + y) * 30,
+            30,
+            30,
+          );
         }
-
-        this.generateGameObject();
-        // this.rotateRightCaller = on(document, "keydown", e => {
-        //     if (e.key === "ArrowUp" || e.key === "W") this.rotateRight()
-        // });
-        // this.rotateLeftCaller = on(document, "keydown", e => {
-        //     if (e.key === "ArrowDown" || e.key === "S") this.rotateLeft()
+      }
     }
+  }
 
-    end() {
-        this.gameLoopInterval = clearInterval(this.gameLoopInterval);
-        this.setScore();
-        log("Game ended");
-        alert("Game ended");
+  drawGhostPiece() {
+    const ghostPosition = { ...this.currentPosition };
+    while (
+      this.canMove(
+        this.currentPiece,
+        ghostPosition.x,
+        ghostPosition.y + 1,
+      )
+    ) {
+      ghostPosition.y++;
     }
-
-    render() {
-        requestAnimationFrame(this.render.bind(this));
-
-        this.renderer.render(this.scene, this.camera);
-
-        if (this.enableControls) this.controls.update();
-    }
-
-    gameLoop() {
-        console.log(this.time, this.gameArray);
-
-        this.running = this.checkForDeath();
-        if (!this.running) return this.end();
-
-        this.update();
-
-        this.checkForFullRows();
-
-        this.time++;
-    }
-
-    update() {
-        this.updateLegalMoves();
-
-        // Check if a object can move down
-        for (let i = 0; i < this.gameObjects.length; i++) {
-            let moveBlock = true;
-
-            this.gameObjects[i].objects.forEach(obj => {
-                if (!obj.canMoveDown && !obj.isAppending) {
-                    moveBlock = false;
-                }
-            });
-
-            if (moveBlock) {
-                this.gameObjects[i].moveDown();
-            } else if (!moveBlock && i === this.gameObjects.length - 1) {
-                // spawn new object
-                return this.generateGameObject();
-            }
+    this.ctx.globalAlpha = 0.3; // Set transparency
+    this.ctx.fillStyle = this.currentColor;
+    for (let y = 0; y < this.currentPiece.length; y++) {
+      for (let x = 0; x < this.currentPiece[y].length; x++) {
+        if (this.currentPiece[y][x]) {
+          this.ctx.fillRect(
+            (ghostPosition.x + x) * 30,
+            (ghostPosition.y + y) * 30,
+            30,
+            30,
+          );
         }
+      }
+    }
+    this.ctx.globalAlpha = 1; // Reset transparency
+  }
 
-        for (let y = 0; y < this.gameArray.length; y++) {
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) continue;
+  gameLoop() {
+    if (this.gameOver) return; // Stop the game loop if the game is over
+    this.moveDown(); // Move the piece down
 
-                const cube = this.gameArray[y][x];
+    setTimeout(() => {
+      this.gameLoop(); // Call the game loop recursively
+    }, 1000 / this.getSpeed()); // Update at the current speed
+  }
 
-                if (cube.gamePosition.y - 1 !== y || cube.gamePosition.x - 1 !== x) {
-                    if (this.gameArray[cube.gamePosition.y - 1][cube.gamePosition.x - 1] === 0) {
-                        this.gameArray[cube.gamePosition.y - 1][cube.gamePosition.x - 1] = cube;
-                        this.gameArray[y][x] = 0;
-                    } else {
-                        this.running = false;
-                        errorLog("Something went wrong. Game ended.");
-                    }
-                }
-            }
+  rotatePiecePositive() {
+    const rotations = this.shapes[this.currentPieceType].rotations;
+
+    // Calculate the next rotation index
+    const nextRotationIndex = (this.rotationIndex + 1) % rotations.length;
+    const nextRotation = rotations[nextRotationIndex];
+
+    // Check if the rotated piece can be placed
+    if (
+      this.canMove(
+        nextRotation,
+        this.currentPosition.x,
+        this.currentPosition.y,
+      )
+    ) {
+      this.currentPiece = nextRotation;
+      this.rotationIndex = nextRotationIndex;
+    }
+  }
+
+  rotatePieceNegative() {
+    const rotations = this.shapes[this.currentPieceType].rotations;
+
+    // Calculate the next rotation index
+    const nextRotationIndex = (this.rotationIndex + rotations.length - 1) %
+      rotations.length;
+    const nextRotation = rotations[nextRotationIndex];
+
+    // Check if the rotated piece can be placed
+    if (
+      this.canMove(
+        nextRotation,
+        this.currentPosition.x,
+        this.currentPosition.y,
+      )
+    ) {
+      this.currentPiece = nextRotation;
+      this.rotationIndex = nextRotationIndex;
+    }
+  }
+
+  endGame() {
+    this.gameOver = true; // Set game over flag
+    alert("Game Over! Your score: " + this.score); // Display game over message
+    console.log("Final Score:", this.score); // Debug log
+
+    this.setScore();
+
+    document.getElementById("start").disabled = false;
+
+    // Optionally, reset the game state for a new game
+    // this.resetGame();
+  }
+
+  resetGame() {
+    this.gameArray = new Array(this.height)
+      .fill(0)
+      .map(() => new Array(this.width).fill(0));
+    this.score = 0;
+    this.level = 1;
+    this.gameOver = false;
+    this.initialized = false;
+    document.getElementById("score").textContent = this.score; // Reset score display
+    this.init(); // Restart the game
+  }
+
+  lockPiece() {
+    for (let y = 0; y < this.currentPiece.length; y++) {
+      for (let x = 0; x < this.currentPiece[y].length; x++) {
+        if (this.currentPiece[y][x]) {
+          this.gameArray[this.currentPosition.y + y][
+            this.currentPosition.x + x
+          ] = this.currentColor; // Store the color
         }
-
-        this.updateLegalMoves();
+      }
     }
+    this.checkLines();
+  }
 
-    updateLegalMoves() {
-        for (let y = 0; y < this.gameArray.length; y++) {
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) continue;
+  hardDrop() {
+    while (
+      this.canMove(
+        this.currentPiece,
+        this.currentPosition.x,
+        this.currentPosition.y + 1,
+      )
+    ) {
+      this.currentPosition.y++;
+    }
+    this.lockPiece();
+    this.spawnPiece();
+  }
 
-                if (y === 0) {
-                    this.gameArray[y][x].canMoveDown = false;
-                    continue;
-                } else {
-                    this.gameArray[y][x].canMoveDown = this.gameArray[y - 1][x] === 0;
-                }
+  moveLeft() {
+    if (
+      this.canMove(
+        this.currentPiece,
+        this.currentPosition.x - 1,
+        this.currentPosition.y,
+      )
+    ) {
+      this.currentPosition.x--;
+    }
+  }
 
-                if (x === 0) {
-                    this.gameArray[y][x].canMoveLeft = false;
-                } else {
-                    this.gameArray[y][x].canMoveLeft = this.gameArray[y][x - 1] === 0;
-                }
+  moveRight() {
+    if (
+      this.canMove(
+        this.currentPiece,
+        this.currentPosition.x + 1,
+        this.currentPosition.y,
+      )
+    ) {
+      this.currentPosition.x++;
+    }
+  }
 
-                if (x === this.width - 1) {
-                    this.gameArray[y][x].canMoveRight = false;
-                } else {
-                    this.gameArray[y][x].canMoveRight = this.gameArray[y][x + 1] === 0;
-                }
-            }
+  moveDown() {
+    if (
+      this.canMove(
+        this.currentPiece,
+        this.currentPosition.x,
+        this.currentPosition.y + 1,
+      )
+    ) {
+      this.currentPosition.y++;
+    } else {
+      this.lockPiece();
+      this.spawnPiece();
+    }
+  }
+
+  canMove(piece, newX, newY) {
+    for (let y = 0; y < piece.length; y++) {
+      for (let x = 0; x < piece[y].length; x++) {
+        if (piece[y][x]) {
+          const boardX = newX + x;
+          const boardY = newY + y;
+          if (
+            boardX < 0 ||
+            boardX >= this.width ||
+            boardY >= this.height ||
+            this.gameArray[boardY][boardX]
+          ) {
+            return false;
+          }
         }
+      }
+    }
+    return true;
+  }
+
+  checkLines() {
+    let linesCleared = 0; // Track the number of lines cleared in this move
+
+    for (let y = this.height - 1; y >= 0; y--) {
+      if (this.gameArray[y].every((cell) => cell !== 0)) {
+        // Remove the completed line
+        this.gameArray.splice(y, 1);
+        // Add a new empty line at the top
+        this.gameArray.unshift(new Array(this.width).fill(0));
+        linesCleared++; // Increment the count of cleared lines
+        y++; // Recheck the current row after shifting
+      }
     }
 
-    checkForFullRows() {
-        const fullRows = [];
-
-        for (let y = 0; y < this.gameArray.length; y++) {
-            let fullRow = true;
-
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) {
-                    fullRow = false;
-                }
-            }
-
-            if (fullRow) {
-                fullRows.push(y);
-            }
-        }
-
-        fullRows.forEach(y => {
-            this.handleFullRow(y);
-        });
+    if (linesCleared > 0) {
+      this.linesCleared += linesCleared; // Update total lines cleared
+      this.updateScore(linesCleared); // Update the score based on lines cleared
+      this.updateLevel(); // Check if the level should increase
     }
+  }
 
-    checkForDeath() {
-        if (this.running === false) return false;
-
-        for (let x = 0; x < this.gameArray[this.height - this.extraRows - 1].length; x++) {
-            const cube = this.gameArray[this.height - this.extraRows - 1][x];
-
-            if (cube === 0) continue;
-
-            if (!cube.canMoveDown && !cube.isAppending) return false;
-
-            if (cube.isAppending) {
-                // check if the block is in the last gameObject
-                // if not, the position is invalid => game over
-                const head = this.headGameObject(cube);
-
-                if (!head.canMoveDown) return false;
-            }
-        }
-
-        return true;
+  updateLevel() {
+    if (this.linesCleared >= this.level * this.linesPerLevel) {
+      this.level++; // Increase the level
+      document.getElementById("level").textContent = this.level; // Update the level display
+      console.log("Level Up! Current Level:", this.level); // Debug log
     }
-
-    generateGameObject() {
-        // This tetris game cannot handle objects with cubes that are connected to more than two other cubes
-        // const type = this.gameObjectTypes[Math.floor(Math.random() * this.gameObjectTypes.length)];
-        const type = "SQUARE";
-
-        if (this.gameObjects.length % 5 === 0) {
-            this.speed += 0.1 * (1 + this.speed / 10);
-            clearInterval(this.gameLoopInterval);
-            this.gameLoopInterval = null;
-            this.gameLoopInterval = setInterval(this.gameLoop.bind(this), 1000 / this.speed);
-        }
-
-        switch (type) {
-            case "LINE":
-                return this.initLine();
-            case "L":
-                return this.initL();
-            case "L_REVERSE":
-                return this.initL(true);
-            case "S":
-                return this.initS();
-            case "S_REVERSE":
-                return this.initS(true);
-            case "SQUARE":
-                return this.initSquare();
-            case "T":
-                return this.initT();
-        }
-    }
-
-    generateCube(color = this.colors[Math.floor(Math.random() * this.colors.length)]) {
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshBasicMaterial({ color });
-        const cube = new THREE.Mesh(geometry, material);
-        cube.position.set(100, 100, 100);
-        this.scene.add(cube);
-        return cube;
-    }
-
-    handleFullRow(y) {
-        const row = this.gameArray[y];
-        let skip = false;
-
-        row.forEach(cube => {
-            if (this.headGameObject(cube).canMoveDown === true) skip = true;
-        });
-
-        // One ore more blocks are falling down
-        if (skip) return;
-
-        for (let x = 0; x < row.length; x++) {
-            const cube = row[x];
-            const head = cube.head === null ? null : this.gameArray[cube.gamePosition.y + cube.head.y - 1][cube.gamePosition.x + cube.head.x - 1];
-            const trail = cube.trail === null ? null : this.gameArray[cube.gamePosition.y + cube.trail.y - 1][cube.gamePosition.x + cube.trail.x - 1];
-
-            if (head !== null) {
-                // handle the head
-                // make it the new trail
-                if (head.trail.x === 1) head.hasBlockRight = false;
-                if (head.trail.x === -1) head.hasBlockLeft = false;
-            }
-
-            if (trail !== null) {
-                // handle the trail
-                // make it the new head
-                if (trail.head.x === 1) trail.hasBlockRight = false;
-                if (trail.head.x === -1) trail.hasBlockLeft = false;
-
-                trail.isAppending = false;
-            }
-
-            if (cube.head !== null) head.trail = null;
-            if (cube.trail !== null) trail.head = null;
-
-
-            this.scene.remove(cube.cube);
-            cube.cube.geometry.dispose();
-            cube.cube.material.dispose();
-
-            row[x] = 0;
-            this.gameArray[y][x] = 0;
-        }
-
-        this.score += 100 * this.speed;
-        this.scoreElement.text(Math.floor(this.score));
-    }
-
-    trailGameObject(object) {
-        if (object.trail === null) return object;
-
-        return this.trailGameObject(this.gameArray[object.gamePosition.y + object.trail.y - 1][object.gamePosition.x + object.trail.x - 1]);
-    }
-
-    headGameObject(object) {
-        if (object.head === null) return object;
-
-        console.log(`Number ${object.number}`, object.gamePosition.y + object.head.y - 1, object.gamePosition.x + object.head.x - 1);
-
-        return this.headGameObject(this.gameArray[object.gamePosition.y + object.head.y - 1][object.gamePosition.x + object.head.x - 1]);
-    }
-
-    moveLeft() {
-        if (this.gameObjects.length === 0) return;
-
-        // Check if a object can move left
-        const object = this.gameObjects[this.gameObjects.length - 1];
-        let moveLeft = true;
-
-        object.objects.forEach(obj => {
-            console.log(obj)
-            console.log("Real: ", !obj.canMoveLeft && !obj.hasBlockLeft);
-            if (!obj.canMoveLeft && !obj.hasBlockLeft) {
-                moveLeft = false;
-            }
-        });
-
-        if (!moveLeft) return;
-
-        const posArray = [];
-        object.objects.forEach(obj => {
-            posArray.push(obj.gamePosition);
-        });
-
-        for (let y = 0; y < this.gameArray.length; y++) {
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) continue;
-
-                const cube = this.gameArray[y][x];
-
-                posArray.forEach(pos => {
-                    if (cube.gamePosition.x === pos.x && cube.gamePosition.y === pos.y) {
-                        this.gameArray[y][x] = 0;
-                    }
-                });
-            }
-        }
-
-        object.moveLeft();
-
-        object.objects.forEach(obj => {
-            this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
-        });
-
-        this.updateLegalMoves();
-    }
-
-    moveRight() {
-        if (this.gameObjects.length === 0) return;
-
-        // Check if a object can move left
-        const object = this.gameObjects[this.gameObjects.length - 1];
-        let moveRight = true;
-
-        object.objects.forEach(obj => {
-            if (!obj.canMoveRight && !obj.hasBlockRight) {
-                moveRight = false;
-            }
-        });
-
-        if (!moveRight) return;
-
-        const posArray = [];
-        object.objects.forEach(obj => {
-            posArray.push(obj.gamePosition);
-        });
-
-        for (let y = 0; y < this.gameArray.length; y++) {
-            for (let x = 0; x < this.gameArray[y].length; x++) {
-                if (this.gameArray[y][x] === 0) continue;
-
-                const cube = this.gameArray[y][x];
-
-                posArray.forEach(pos => {
-                    if (cube.gamePosition.x === pos.x && cube.gamePosition.y === pos.y) {
-                        this.gameArray[y][x] = 0;
-                    }
-                });
-            }
-        }
-
-        object.moveRight();
-
-        object.objects.forEach(obj => {
-            this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
-        });
-
-        this.updateLegalMoves();
-    }
-
-    rotateRight() {
-        // rotate the current object
-        // optional
-    }
-
-    rotateLeft() {
-        // rotate the current object
-        // optional
-    }
-
-    getPositionX(x) {
-        return x - this.offset.x;
-    }
-
-    getPositionY(y) {
-        return y - this.offset.y;
-    }
-
-    clearScene() {
-        // Loop through all children in the scene
-        while (this.scene.children.length > 0) {
-            const object = this.scene.children[0];
-            
-            // Remove the object from the scene
-            this.scene.remove(object);
-    
-            // Dispose of geometry and material (if any)
-            if (object.geometry) object.geometry.dispose();
-            if (object.material) {
-                // If the material is an array, dispose of each one
-                if (Array.isArray(object.material)) {
-                    object.material.forEach(mat => mat.dispose());
-                } else {
-                    object.material.dispose();
-                }
-            }
-        }
-    
-        log("Scene cleared!");
-    }
-
-    updateHighscores(array) {
-        const ol = getElm("highscores");
-        ol.html("");
-
-        array.forEach(score => {
-            const li = createElm("li");
-            li.text(score);
-            ol.append(li);
-        });
-    }
-
-    async setScore() {
-        const response = await post("/setScore", { score: Math.floor(this.score) });
-        this.updateHighscores(response.scores);
-    }
-
-    initLine() {
-        const line = new Line(this);
-
-        line.objects.forEach(obj => {
-            if (this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] !== 0) return this.end();
-  
-            this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
-        });
-
-        this.gameObjects.push(line);
-
-        this.updateLegalMoves();
-
-        return line;
-    }
-
-    initL(reverse = false) {
-        const l = new L(this, reverse);
-
-        l.objects.forEach(obj => {
-            if (this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] !== 0) return this.end();
-  
-            this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
-        });
-
-        this.gameObjects.push(l);
-
-        this.updateLegalMoves();
-
-        return l;
-    }
-
-    initS(reverse = false) {
-        
-    }
-
-    initSquare() {
-        const square = new Square(this);
-
-        console.log(square);
-
-        square.objects.forEach(obj => {
-            if (this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] !== 0) return this.end();
-  
-            this.gameArray[obj.gamePosition.y - 1][obj.gamePosition.x - 1] = obj;
-        });
-
-        this.gameObjects.push(square);
-
-        this.updateLegalMoves();
-
-        return square;
-    }
-
-    initT() {
-        
-    }
-    
-    // Add two invisible rows at the top for cubes like -| to spawn and three rows for | cubes to spawn
-    // this.gameArray = [
-    //     [0, 0, 0, 0, 0, 0], // only used if | spawn
-    //     [0, 0, 0, 0, 0, 0], // used if | or -| or |-  or _| or |_ spawn + the stairs
-    //     [0, 0, 0, 0, 0, 0], // used of all the above or 2x2 cubes spawn
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    //     [0, 0, 0, 0, 0, 0],
-    // ]
+  }
+
+  updateScore(linesCleared) {
+    const score = 100 * this.getSpeed() * Math.pow(2, linesCleared - 1); // Calculate the score
+    this.score += score; // Add to the total score
+    document.getElementById("score").textContent = this.score; // Update the score display
+  }
+
+  render() {
+    this.draw();
+    requestAnimationFrame(() => this.render()); // Continuously render at 60 FPS
+  }
+
+  updateHighscores(array) {
+    const ol = document.getElementById("highscores");
+    ol.innerHTML = ""; // Clear the list
+
+    array.forEach((score) => {
+      const li = document.createElement("li");
+      li.innerText = score;
+      ol.appendChild(li);
+    });
+  }
+
+  async setScore() {
+    const response = await fetch("/setScore", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      mode: "cors",
+      cache: "default",
+      _REDirect: "follow",
+      credentials: "same-origin",
+      referrerPolicy: "no-referrer-when-downgrade",
+      body: JSON.stringify({
+        score: Math.floor(Number(this.score)),
+      }),
+    });
+    const { scores } = await response.json();
+    this.updateHighscores(scores);
+  }
 }
 
-const tetris = new Tetris(6, 12, 1.5);
-tetris.init();
+const tetris = new Tetris(10, 20, 1);
 
-getElm("start").on("click", () => {
-    document.dispatchEvent(tetris.events.runStart);
+document.getElementById("start").addEventListener("click", () => {
+  tetris.resetGame();
+  document.getElementById("start").disabled = true;
+});
+
+document.addEventListener("keydown", (e) => {
+  if (tetris.gameOver) return; // Don't accept input if the game is over
+  if (e.key === "ArrowLeft" || e.key === "a") tetris.moveLeft();
+  if (e.key === "ArrowRight" || e.key === "d") tetris.moveRight();
+  if (e.key === "ArrowDown" || e.key === "Shift" || e.key === "s") {
+    tetris.moveDown();
+  }
+  if (e.key === " " || e.key === "Spacebar") tetris.hardDrop();
+  if (e.key === "q") tetris.rotatePieceNegative();
+  if (e.key === "e" || e.key === "ArrowUp") tetris.rotatePiecePositive();
 });
