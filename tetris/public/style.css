@@ -16,13 +16,31 @@ body {
   width: 100%;
 }
 
-canvas {
+canvas#scene {
   position: fixed;
   top: 5vh;
   height: 90vh;
   width: 45vh;
   left: 50%;
   transform: translateX(-50%);
+  background-color: black;
+}
+
+canvas#next {
+  position: fixed;
+  top: 5vh;
+  height: 24vh;
+  width: 16vh;
+  right: 16vh;
+  background-color: black;
+}
+
+canvas#hold {
+  position: fixed;
+  top: 34vh;
+  height: 24vh;
+  width: 16vh;
+  right: 16vh;
   background-color: black;
 }
 
