@@ -25,6 +25,7 @@ board = [
   [None, None, None]
 ]
 player = "X"
+player_ip = input("Gib die IP des Spielpartners ein: ")
 
 def draw_symbol(row, col):
     if player == "X":
@@ -65,18 +66,29 @@ def board_full():
     
     return True
 
-def turn(x, y):
+def local_turn(x, y):
+    turn(x, y, "local")
+
+def turn(x, y, user):
     global player, client, player_ip
+    
+    if (user == "local" and player == "O"):
+        print("It is not your turn")
+        return
+    
+    if (user == "remote" and player == "X"):
+        return
 
     # Get coordinates of upper left 
     # corner of the clicked field
     row = int(y)
     col = int(x)
     
-    client.sendMessage(player_ip + ":" + str(row) + "," + str(col))
+    if (user == "local"):
+        client.sendMessage(player_ip + ":" + str(row) + "," + str(col))
     
     if game_over() or board_full():
-        restart()
+        restart(user)
         return
     
     if board[row][col] == None:
@@ -98,8 +110,8 @@ def turn(x, y):
         print("This field is already occupied.")
 
 # Main program
-def restart():
-    global board, player
+def restart(user = "local"):
+    global board, player, player_ip, client
     
     board = [
       [None, None, None],
@@ -108,33 +120,32 @@ def restart():
     ]
     player = "X"
     
+    client.sendMessage(player_ip + ":START O")
+    
     clear()
     setColor("black")
     lineWidth(1)
     drawGrid(0, 3, 3, 0, 3, 3)
     lineWidth(5)
 
-makeGPanel(0, 3, 3, 0, mousePressed=turn)
-restart()
-
 # Server Stuff
 def handle_event(event, message):
+    global player
+
     print(event, message)
-    # Beispielhaftes Parsing: 
-    # '192.168.1.10:2,1' --> erst den Teil hinter ':' holen --> '2,1'
-    if ":" in message:
-        coords = message.split(": ")[1]  # Teil hinter dem Doppelpunkt
-    else:
-        coords = message  # Falls kein ":" vorhanden (Backup-Fall)
-    if "," in coords:
-        rowString, colString = coords.split(",")
-        row = int(rowString)
-        col = int(colString)
-        turn(row, col)
-        print(row, col)
-    else:
-        # Falls kein Komma vorhanden ist, kann man eine Fehlermeldung ausgeben
-        print("Unerwartetes Nachrichtenformat:", coords)
+    
+    if ("START" in message):
+        player = message[-1]
+        return
+
+    if ("," in message):
+        before, after = message.split(",")
+        
+        beforeInt = int(before[-1])
+        afterInt = int(after[0])
+        
+        turn(afterInt, beforeInt, "remote")
+        return
 
 # Connect to server
 server_ip = "116.203.99.55" # Anpassen
@@ -142,7 +153,5 @@ port = 43223                # Anpassen
 client = TCPClient(server_ip, port, stateChanged=handle_event)
 client.connect()
 
-player_ip = input("Gib die IP des Spielpartners ein: ")
-
-
-
+makeGPanel(0, 3, 3, 0, mousePressed=local_turn)
+restart()
