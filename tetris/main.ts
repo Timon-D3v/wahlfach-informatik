@@ -4,6 +4,7 @@ import _ejs from "npm:ejs";
 
 const app = express();
 const port = 8080;
+const host = "0.0.0.0"
 
 app.set("view engine", "ejs");
 app.use(express.static("public"));
@@ -28,6 +29,6 @@ app.post("/setScore", async (req: Request, res: Response) => {
   res.json({ scores: highscores });
 });
 
-app.listen(port, () => {
+app.listen(port, host, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
